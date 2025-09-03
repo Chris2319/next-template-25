@@ -1,0 +1,329 @@
+# Component Development Rules
+
+## Component Architecture
+- One component per file and directory
+- Components must be type-driven: `components > controls > button > _types`
+- Use functional components with hooks (avoid class components)
+- Keep components focused on a single responsibility
+- Use composition over inheritance
+
+## File Structure
+```
+components/
+├── shared/           # Reusable UI components
+│   ├── Button/
+│   │   ├── Button.tsx
+│   │   ├── Button.module.scss
+│   │   ├── _types.ts
+│   │   └── index.ts
+├── feature/          # Feature-specific components  
+│   └── auth/
+│       ├── AuthModal/
+│       │   ├── AuthModal.tsx
+│       │   ├── AuthModal.module.scss
+│       │   └── index.ts
+```
+
+## Component Structure
+```typescript
+// types.ts - Interface definition
+export type ButtonVariant = 'primary' | 'secondary' | 'danger';
+export type ButtonSize = 'sm' | 'md' | 'lg';
+
+export type ButtonProps = {
+  children: React.ReactNode;
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  disabled?: boolean;
+  loading?: boolean;
+  onClick?: () => void;
+  type?: 'button' | 'submit' | 'reset';
+  className?: string;
+}
+
+// Button.tsx - Component implementation
+export const Button: React.FC<ButtonProps> = ({
+  children,
+  variant = 'primary',
+  size = 'md',
+  disabled = false,
+  loading = false,
+  onClick,
+  type = 'button',
+  className = ''
+}) => {
+  // Implementation
+};
+```
+
+## Component Design Principles
+- **Single Responsibility**: Each component should do one thing well
+- **Composition**: Build complex UIs by combining simple components
+- **Reusability**: Design components to be used in multiple contexts
+- **Predictability**: Same props should always produce the same output
+- **Flexibility**: Use props to configure behavior, not hardcode values
+
+## Props Guidelines
+- Always define prop interfaces/types
+- Use descriptive prop names that indicate purpose
+- Provide sensible default values
+- Keep prop count reasonable (max 10-12 props)
+- Use union types for limited options
+- Group related props into objects when appropriate
+
+```typescript
+// Good: Related props grouped
+interface IFormProps {
+  validation: {
+    required?: boolean;
+    minLength?: number;
+    pattern?: RegExp;
+  };
+  appearance: {
+    variant: 'outlined' | 'filled';
+    size: 'sm' | 'md' | 'lg';
+  };
+}
+
+// Bad: Too many individual props
+interface IBadFormProps {
+  required?: boolean;
+  minLength?: number;
+  pattern?: RegExp;
+  variant?: 'outlined' | 'filled';
+  size?: 'sm' | 'md' | 'lg';
+  // ... many more props
+}
+```
+
+## State Management
+- Use `useState` for local component state
+- Use `useReducer` for complex state logic
+- Lift state up when multiple components need access
+- Use context for deeply nested prop drilling scenarios
+- Keep state as close to where it's used as possible
+
+## Event Handling
+- Use descriptive event handler names: `onSubmit`, `onValueChange`, `onModalClose`
+- Don't create functions inside render methods (use `useCallback`)
+- Pass minimal data in event handlers
+- Handle errors in event handlers gracefully
+
+```typescript
+const MyComponent: React.FC<IMyComponentProps> = ({ onSubmit, onError }) => {
+  const handleSubmit = useCallback(async (formData: FormData) => {
+    try {
+      await onSubmit(formData);
+    } catch (error) {
+      console.error('Form submission failed:', error);
+      onError?.(error);
+    }
+  }, [onSubmit, onError]);
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {/* form content */}
+    </form>
+  );
+};
+```
+
+## Styling Integration
+- Use CSS Modules for component styles
+- Co-locate styles with components
+- Name classes descriptively based on what they are, not BEM methodology
+- Accept `className` prop for style overrides
+- Use CSS variables for themeable properties
+- Always use HSLA values for colors
+
+## Performance Optimization
+- Use `React.memo` for expensive renders
+- Implement `useMemo` for expensive calculations
+- Use `useCallback` for event handlers passed to child components
+- Avoid creating objects/arrays in render methods
+- Lazy load components when appropriate
+- **Always use optimistic updates for instant user feedback**
+
+## Optimistic UI States
+Handle optimistic update states in components for better UX:
+
+```typescript
+const OptimizedComponent: React.FC<{ item: Item }> = ({ item }) => {
+  const updateMutation = useUpdateItem();
+  const deleteMutation = useDeleteItem();
+
+  const handleUpdate = (updates: Partial<Item>) => {
+    updateMutation.mutate({ id: item.id, updates });
+  };
+
+  const handleDelete = () => {
+    deleteMutation.mutate(item.id);
+  };
+
+  // Show different states for optimistic operations
+  const isUpdating = updateMutation.isPending;
+  const isDeleting = deleteMutation.isPending;
+  const hasError = updateMutation.error || deleteMutation.error;
+
+  return (
+    <div className={`item ${isDeleting ? 'deleting' : ''} ${hasError ? 'error' : ''}`}>
+      <span className={isUpdating ? 'updating' : ''}>{item.title}</span>
+      
+      <button onClick={handleUpdate} disabled={isUpdating}>
+        {isUpdating ? 'Saving...' : 'Update'}
+      </button>
+      
+      <button onClick={handleDelete} disabled={isDeleting}>
+        {isDeleting ? 'Deleting...' : 'Delete'}
+      </button>
+      
+      {hasError && (
+        <span className="error-message">
+          {updateMutation.error?.message || deleteMutation.error?.message}
+        </span>
+      )}
+    </div>
+  );
+};
+```
+
+```typescript
+// Memoized component
+export const ExpensiveComponent = React.memo<IExpensiveComponentProps>(
+  ({ data, onUpdate }) => {
+    const processedData = useMemo(() => {
+      return expensiveDataProcessing(data);
+    }, [data]);
+
+    const handleUpdate = useCallback((newValue: string) => {
+      onUpdate(newValue);
+    }, [onUpdate]);
+
+    return <div>{/* component content */}</div>;
+  }
+);
+```
+
+## Error Boundaries and Error Handling
+- Wrap components with error boundaries when appropriate
+- Provide fallback UI for error states
+- Handle loading and empty states gracefully
+- Use proper TypeScript error types
+
+```typescript
+interface IComponentState {
+  data: DataType | null;
+  loading: boolean;
+  error: string | null;
+}
+
+const MyComponent: React.FC = () => {
+  const [state, setState] = useState<IComponentState>({
+    data: null,
+    loading: false,
+    error: null
+  });
+
+  if (state.loading) return <LoadingSpinner />;
+  if (state.error) return <ErrorMessage message={state.error} />;
+  if (!state.data) return <EmptyState />;
+
+  return <div>{/* render data */}</div>;
+};
+```
+
+## Accessibility Guidelines
+- Use semantic HTML elements
+- Provide ARIA labels and roles when needed
+- Ensure keyboard navigation works properly
+- Maintain focus management in modals and dropdowns
+- Test with screen readers
+
+## Testing Considerations
+- Write components that are easy to test
+- Use data-testid attributes for test targeting
+- Mock external dependencies
+- Test user interactions, not implementation details
+- Provide test utilities for complex components
+
+## Component Categories
+- **Layout Components**: Handle page structure and positioning
+- **UI Components**: Reusable interface elements (buttons, inputs, cards)
+- **Feature Components**: Business logic specific components
+- **Higher-Order Components**: Wrap other components with additional functionality
+- **Compound Components**: Components that work together as a system
+
+## Reusability Guidelines
+- Don't create new components when existing ones can be refactored
+- Extract common patterns into reusable components
+- Use render props or compound patterns for flexible APIs
+- Document component usage with examples
+- Version components when making breaking changes
+
+## API Integration in Components
+- **Never make direct API calls in components**
+- **Always use custom TanStack Query hooks for all API operations**
+- Keep API logic separate from component rendering logic
+- Handle loading, error, and empty states consistently
+
+```typescript
+// Bad: Direct API call in component
+const UserProfile: React.FC<{ userId: string }> = ({ userId }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`/api/users/${userId}`)
+      .then(res => res.json())
+      .then(setUser)
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  // Component logic...
+};
+
+// Good: Using TanStack Query hook with optimistic updates
+const UserProfile: React.FC<{ userId: string }> = ({ userId }) => {
+  const { data: user, isLoading, error } = useUser(userId);
+  const updateUserMutation = useUpdateUser(); // Has optimistic updates built-in
+
+  const handleUpdate = (updates: Partial<User>) => {
+    // Optimistic update provides instant feedback
+    updateUserMutation.mutate({ id: userId, updates });
+  };
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage error={error} />;
+  if (!user) return <NotFound />;
+
+  return (
+    <div>
+      <UserForm 
+        user={user} 
+        onSubmit={handleUpdate} 
+        isSubmitting={updateUserMutation.isPending}
+      />
+      
+      {/* Show optimistic update states */}
+      {updateUserMutation.isPending && (
+        <div className="optimistic-saving">Saving...</div>
+      )}
+      
+      {updateUserMutation.error && (
+        <div className="optimistic-error">
+          Save failed: {updateUserMutation.error.message}
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+## Anti-Patterns to Avoid
+- Prop drilling (use context or state management)
+- Overly complex components (split into smaller pieces)
+- Tight coupling between components
+- Hardcoded values that should be configurable
+- Missing error boundaries for critical components
+- Creating components inside render methods
+- **Making direct API calls in components instead of using TanStack Query hooks**

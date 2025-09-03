@@ -1,0 +1,524 @@
+# API Patterns and TanStack Query Rules
+
+## Core API Principles
+- **Always create custom hooks using TanStack Query for API calls**
+- Never make direct API calls in components
+- Separate API service functions from hooks
+- Use consistent naming conventions for API hooks
+- Implement proper error handling and loading states
+
+## File Structure
+```
+src/
+├── libs/
+│   ├── services/          # API service functions
+│   │   ├── userService.ts
+│   │   ├── authService.ts
+│   │   └── index.ts
+│   ├── hooks/
+│   │   ├── auth/          # TanStack Query hooks
+│   │   │   └── useAuth.ts
+```
+
+## API Service Layer
+Create pure API functions that return promises. Keep them separate from React hooks.
+
+```typescript
+// src/libs/services/userService.ts
+export type UserFilters = {
+  page?: number;
+  limit?: number;
+  search?: string;
+  role?: UserRole;
+};
+
+export const userService = {
+  // GET operations
+  getUser: async (id: string): Promise<User> => {
+    const response = await fetch(`/api/users/${id}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch user: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  getUsers: async (filters?: UserFilters): Promise<PaginatedResponse<User>> => {
+    const params = new URLSearchParams();
+    if (filters?.page) params.append('page', filters.page.toString());
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    if (filters?.search) params.append('search', filters.search);
+    if (filters?.role) params.append('role', filters.role);
+
+    const response = await fetch(`/api/users?${params}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch users: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  // POST operations
+  createUser: async (userData: CreateUserData): Promise<User> => {
+    const response = await fetch('/api/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(userData),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to create user: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  // PUT operations
+  updateUser: async (id: string, updates: Partial<User>): Promise<User> => {
+    const response = await fetch(`/api/users/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to update user: ${response.statusText}`);
+    }
+    return response.json();
+  },
+
+  // DELETE operations
+  deleteUser: async (id: string): Promise<void> => {
+    const response = await fetch(`/api/users/${id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to delete user: ${response.statusText}`);
+    }
+  },
+};
+```
+
+## Query Hooks (GET Operations)
+Use `useQuery` for data fetching. Always include proper error handling and caching strategies.
+
+```typescript
+// src/libs/hooks/api/useUser.ts
+import { useQuery } from '@tanstack/react-query';
+import { userService } from '../../services/userService';
+
+export const useUser = (userId: string) => {
+  return useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => userService.getUser(userId),
+    enabled: !!userId, // Only fetch if userId exists
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+  });
+};
+
+export const useUsers = (filters?: UserFilters) => {
+  return useQuery({
+    queryKey: ['users', filters],
+    queryFn: () => userService.getUsers(filters),
+    keepPreviousData: true, // For pagination
+    staleTime: 2 * 60 * 1000, // 2 minutes
+  });
+};
+
+// Infinite query for large datasets
+export const useUsersInfinite = (filters?: Omit<UserFilters, 'page'>) => {
+  return useInfiniteQuery({
+    queryKey: ['users', 'infinite', filters],
+    queryFn: ({ pageParam = 1 }) =>
+      userService.getUsers({ ...filters, page: pageParam }),
+    getNextPageParam: (lastPage, allPages) => {
+      return lastPage.hasMore ? allPages.length + 1 : undefined;
+    },
+    initialPageParam: 1,
+  });
+};
+```
+
+## Mutation Hooks (POST/PUT/DELETE Operations)
+Use `useMutation` for data modifications. Always handle cache updates.
+
+```typescript
+// src/libs/hooks/api/useUserMutations.ts
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { userService } from '../../services/userService';
+
+export const useCreateUser = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (userData: CreateUserData) => userService.createUser(userData),
+    onMutate: async (userData) => {
+      // Optimistic update for create operations
+      await queryClient.cancelQueries({ queryKey: ['users'] });
+      
+      const previousUsers = queryClient.getQueryData<PaginatedResponse<User>>(['users']);
+      
+      // Create temporary ID for optimistic update
+      const optimisticUser: User = {
+        id: `temp-${Date.now()}`,
+        ...userData,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Optimistically add to users list
+      queryClient.setQueryData<PaginatedResponse<User>>(['users'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: [optimisticUser, ...old.data],
+          total: old.total + 1,
+        };
+      });
+
+      return { previousUsers, optimisticUser };
+    },
+    onError: (error, variables, context) => {
+      // Rollback optimistic create
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['users'], context.previousUsers);
+      }
+      console.error('Failed to create user:', error);
+    },
+    onSuccess: (newUser, variables, context) => {
+      // Replace optimistic user with real server data
+      queryClient.setQueryData<PaginatedResponse<User>>(['users'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map(user => 
+            user.id === context?.optimisticUser.id ? newUser : user
+          ),
+        };
+      });
+
+      // Cache the new user individually
+      queryClient.setQueryData(['user', newUser.id], newUser);
+    },
+  });
+};
+
+export const useUpdateUser = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<User> }) =>
+      userService.updateUser(id, updates),
+    onMutate: async ({ id, updates }) => {
+      // ALWAYS implement optimistic updates for better UX
+      await queryClient.cancelQueries({ queryKey: ['user', id] });
+      
+      // Get previous data for rollback
+      const previousUser = queryClient.getQueryData<User>(['user', id]);
+      const previousUsers = queryClient.getQueryData<PaginatedResponse<User>>(['users']);
+
+      // Optimistically update single user
+      queryClient.setQueryData<User>(['user', id], (old) => ({
+        ...old!,
+        ...updates,
+      }));
+
+      // Optimistically update users list
+      queryClient.setQueryData<PaginatedResponse<User>>(['users'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map(user => 
+            user.id === id ? { ...user, ...updates } : user
+          ),
+        };
+      });
+
+      return { previousUser, previousUsers, id };
+    },
+    onError: (error, variables, context) => {
+      // Rollback optimistic updates on error
+      if (context?.previousUser) {
+        queryClient.setQueryData(['user', context.id], context.previousUser);
+      }
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['users'], context.previousUsers);
+      }
+      console.error('Failed to update user:', error);
+    },
+    onSuccess: (updatedUser) => {
+      // Update cache with server response (may differ from optimistic update)
+      queryClient.setQueryData(['user', updatedUser.id], updatedUser);
+      
+      // Update users list with server data
+      queryClient.setQueryData<PaginatedResponse<User>>(['users'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.map(user => 
+            user.id === updatedUser.id ? updatedUser : user
+          ),
+        };
+      });
+    },
+  });
+};
+
+export const useDeleteUser = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (userId: string) => userService.deleteUser(userId),
+    onMutate: async (userId) => {
+      // Optimistic delete
+      await queryClient.cancelQueries({ queryKey: ['users'] });
+      await queryClient.cancelQueries({ queryKey: ['user', userId] });
+      
+      const previousUser = queryClient.getQueryData<User>(['user', userId]);
+      const previousUsers = queryClient.getQueryData<PaginatedResponse<User>>(['users']);
+
+      // Optimistically remove from users list
+      queryClient.setQueryData<PaginatedResponse<User>>(['users'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          data: old.data.filter(user => user.id !== userId),
+          total: old.total - 1,
+        };
+      });
+
+      // Optimistically remove individual user cache
+      queryClient.removeQueries({ queryKey: ['user', userId] });
+
+      return { previousUser, previousUsers, userId };
+    },
+    onError: (error, userId, context) => {
+      // Rollback optimistic delete
+      if (context?.previousUsers) {
+        queryClient.setQueryData(['users'], context.previousUsers);
+      }
+      if (context?.previousUser) {
+        queryClient.setQueryData(['user', userId], context.previousUser);
+      }
+      console.error('Failed to delete user:', error);
+    },
+    onSuccess: (_, deletedUserId) => {
+      // Confirm deletion (cleanup)
+      queryClient.removeQueries({ queryKey: ['user', deletedUserId] });
+    },
+  });
+};
+```
+
+## Hook Naming Conventions
+- **Query hooks**: `use[Entity]` or `use[Entity]s` - e.g., `useUser`, `useUsers`
+- **Mutation hooks**: `use[Action][Entity]` - e.g., `useCreateUser`, `useUpdateUser`, `useDeleteUser`
+- **Complex hooks**: `use[Entity][Action]` - e.g., `useUserProfile`, `useUserSettings`
+
+## Error Handling Patterns
+```typescript
+// Global error handler
+export const useApiError = () => {
+  const handleError = useCallback((error: Error) => {
+    console.error('API Error:', error);
+    
+    // Handle specific error types
+    if (error.message.includes('401')) {
+      // Redirect to login
+      window.location.href = '/login';
+      return;
+    }
+    
+    if (error.message.includes('403')) {
+      // Show permission error
+      toast.error('You do not have permission for this action');
+      return;
+    }
+    
+    // Generic error
+    toast.error('Something went wrong. Please try again.');
+  }, []);
+
+  return { handleError };
+};
+
+// Component with error handling
+const UserList: React.FC = () => {
+  const { data: users, isLoading, error } = useUsers();
+  const { handleError } = useApiError();
+
+  useEffect(() => {
+    if (error) {
+      handleError(error);
+    }
+  }, [error, handleError]);
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorBoundary />;
+
+  return (
+    <div>
+      {users?.data.map(user => (
+        <UserCard key={user.id} user={user} />
+      ))}
+    </div>
+  );
+};
+```
+
+## Optimistic Updates - MANDATORY
+**Always implement optimistic updates for mutations to provide instant feedback and better UX.**
+
+### When to Use Optimistic Updates
+- **CREATE operations**: Add item immediately to lists
+- **UPDATE operations**: Apply changes immediately  
+- **DELETE operations**: Remove items immediately
+- **TOGGLE operations**: Switch states immediately (like/favorite)
+
+### Optimistic Update Pattern
+```typescript
+const useOptimisticMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data) => apiCall(data),
+    onMutate: async (variables) => {
+      // 1. Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['data'] });
+      
+      // 2. Snapshot previous value for rollback
+      const previousData = queryClient.getQueryData(['data']);
+      
+      // 3. Optimistically update cache
+      queryClient.setQueryData(['data'], (old) => {
+        // Apply optimistic changes
+        return applyOptimisticChange(old, variables);
+      });
+
+      // 4. Return rollback data
+      return { previousData };
+    },
+    onError: (error, variables, context) => {
+      // 5. Rollback on error
+      if (context?.previousData) {
+        queryClient.setQueryData(['data'], context.previousData);
+      }
+    },
+    onSuccess: (serverData) => {
+      // 6. Update with server response (may differ from optimistic)
+      queryClient.setQueryData(['data'], serverData);
+    },
+  });
+};
+```
+
+### Complex Optimistic Updates
+For operations affecting multiple caches:
+
+```typescript
+const useComplexOptimisticUpdate = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: updateData,
+    onMutate: async (variables) => {
+      // Cancel all related queries
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['items'] }),
+        queryClient.cancelQueries({ queryKey: ['item', variables.id] }),
+        queryClient.cancelQueries({ queryKey: ['stats'] }),
+      ]);
+
+      // Snapshot all affected caches
+      const previousItems = queryClient.getQueryData(['items']);
+      const previousItem = queryClient.getQueryData(['item', variables.id]);
+      const previousStats = queryClient.getQueryData(['stats']);
+
+      // Apply optimistic updates to all caches
+      queryClient.setQueryData(['items'], (old) => updateItemsList(old, variables));
+      queryClient.setQueryData(['item', variables.id], (old) => updateSingleItem(old, variables));
+      queryClient.setQueryData(['stats'], (old) => updateStats(old, variables));
+
+      return { previousItems, previousItem, previousStats, id: variables.id };
+    },
+    onError: (error, variables, context) => {
+      // Rollback all caches
+      if (context) {
+        queryClient.setQueryData(['items'], context.previousItems);
+        queryClient.setQueryData(['item', context.id], context.previousItem);
+        queryClient.setQueryData(['stats'], context.previousStats);
+      }
+    },
+    onSuccess: (data) => {
+      // Update all caches with server data
+      queryClient.setQueryData(['items'], data.items);
+      queryClient.setQueryData(['item', data.item.id], data.item);
+      queryClient.setQueryData(['stats'], data.stats);
+    },
+  });
+};
+```
+
+## Performance Best Practices
+- Use `staleTime` to prevent unnecessary refetches
+- Implement `keepPreviousData` for pagination
+- Use `select` to transform data and prevent unnecessary re-renders
+- Implement proper loading states with skeletons
+- **ALWAYS use optimistic updates for mutations**
+- Use TypeScript to ensure rollback data integrity
+
+```typescript
+// Data transformation with select
+export const useUserNames = () => {
+  return useQuery({
+    queryKey: ['users'],
+    queryFn: () => userService.getUsers(),
+    select: (data) => data.data.map(user => ({ id: user.id, name: user.name })),
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+};
+
+// Dependent queries
+export const useUserWithPosts = (userId: string) => {
+  const userQuery = useUser(userId);
+  
+  const postsQuery = useQuery({
+    queryKey: ['posts', 'user', userId],
+    queryFn: () => postService.getUserPosts(userId),
+    enabled: !!userQuery.data?.id, // Only fetch when user exists
+  });
+
+  return {
+    user: userQuery.data,
+    posts: postsQuery.data,
+    isLoading: userQuery.isLoading || (userQuery.data && postsQuery.isLoading),
+    error: userQuery.error || postsQuery.error,
+  };
+};
+```
+
+## Testing API Hooks
+```typescript
+// Mock service for testing
+jest.mock('../../services/userService', () => ({
+  userService: {
+    getUser: jest.fn(),
+    createUser: jest.fn(),
+    updateUser: jest.fn(),
+  },
+}));
+
+describe('useUser', () => {
+  it('should fetch user data', async () => {
+    const mockUser = { id: '1', name: 'John Doe', email: 'john@example.com' };
+    (userService.getUser as jest.Mock).mockResolvedValue(mockUser);
+
+    const { result, waitFor } = renderHook(() => useUser('1'), {
+      wrapper: createQueryWrapper(),
+    });
+
+    await waitFor(() => result.current.isSuccess);
+
+    expect(result.current.data).toEqual(mockUser);
+    expect(userService.getUser).toHaveBeenCalledWith('1');
+  });
+});
+```

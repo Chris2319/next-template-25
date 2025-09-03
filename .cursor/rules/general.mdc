@@ -1,0 +1,97 @@
+# General Development Rules
+
+## Task Management
+- Always make a list of items that needs to be done
+- Break large tasks into smaller, manageable pieces
+- Use TODO comments in code for technical debt and future improvements
+- Track progress and update stakeholders regularly
+
+## Boy Scout Rule
+**Leave the campground cleaner than you found it**
+- Refactor code when you touch it
+- Fix small issues you encounter while working on other features
+- Improve code readability and maintainability continuously
+
+## 5 Step Development Process
+1. **Make requirements less dumb** - Question if what we're doing makes logical sense
+2. **Delete the part or process** - Remove code that's not needed; don't optimize unnecessary code
+3. **Simplify & Optimize** - Clean code is easy to understand regardless of expertise level
+4. **Speed up the process** - Consistent structure speeds up development and debugging
+5. **Automate** - Automate repetitive tasks and processes
+
+What I mean by clean code is just common sense, name things well, break lines or sections where you can, group logic
+
+## Project Organization
+- One component per file and directory
+- Components must be type-driven: `components > controls > button > types`
+- Group related files in feature folders
+- Keep consistent folder structure across the project
+- Use barrel exports (`index.ts`) to simplify imports
+
+## Code Quality Standards
+- No errors or warnings on commits (excluding duplicate code/typos)
+- Minimum use of `any` or `unknown` types
+- Use TypeScript strictly - leverage the type system
+- All interfaces/types should be properly defined
+- Alphabetize enums and anything that can be alphabetized
+
+## Development Workflow
+- No Friday releases to production or acceptance environments
+- Always find the root cause of problems
+- Check with backend team for cross-system issues
+- Complete all promises with `.then()`, `.catch()`, `.finally()` when needed or better - use async await.
+- Format promise chains vertically for easy-to-follow hierarchy
+
+## Code Structure Guidelines
+- Group code logically: constants at top, then loops, then other logic
+- Keep component lines under 1000, functions under 100 lines but this is not set in stone - if things are complex so be it
+- Avoid nesting levels over 5 deep
+- Use guard clauses instead of deep nesting
+- Be generous with guard clauses; avoid "else if" chains
+
+## Naming and Conventions
+- Use full descriptive names in loops: `(user) => {}` not `(_t) => {}` - but when its a 'fleeing value, like you dont use it ever again' then something like _t is okay
+- No negative conditionals: avoid `if(!notAllowed)`
+- Use types correctly: avoid string-boolean checks like `if(value === 'true')`
+- Use ES6+ features consistently
+- Prefer composition over inheritance
+
+## Performance and UX
+- UX is king in frontend applications
+- **Always implement optimistic updates for instant user feedback**
+- Total load time should not exceed 3 seconds
+- Backend load ≤ 2 seconds, frontend ≤ 1 second
+- **User actions should have 0ms perceived latency through optimistic updates**
+- Move functionality to backend if it improves user experience
+- Be efficient with DOM and local data manipulations
+- Don't call backend if data is already available locally - Tanstack cache and redux toolkit state can help here
+
+## Technical Dependencies
+- Use fewer packages - build custom solutions when constraints outweigh benefits
+- Don't use Material UI, Bootstrap, or similar constraint-heavy libraries
+- **Always use TanStack Query for API calls** - create custom hooks, never direct calls
+- Avoid over-configurability - balance future-proofing with current needs
+- Consider maintenance cost vs development time savings
+
+## Code Review and Quality
+- Focus on human usability: "When Peter clicks the button, what must happen?"
+- Write code from frontend perspective, not backend structure convenience
+- Always consider the end user's experience in design decisions
+
+## Error Handling
+- Add `console.error()` in all catch blocks
+- Provide meaningful error messages to users
+- Never expose technical errors to end users
+- Implement proper fallback states and error boundaries
+
+## Documentation
+- Comment large blocks of complex code with step-by-step explanations
+- Write self-documenting code that doesn't require extensive comments
+- Keep README files updated with setup and development instructions
+- Document any non-obvious business logic or edge cases
+
+## Testing Strategy
+- Write testable code (pure functions, clear interfaces)
+- Test critical user paths first
+- Mock external dependencies properly
+- Keep tests simple and focused on behavior, not implementation

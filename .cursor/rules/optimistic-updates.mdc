@@ -1,0 +1,458 @@
+# Optimistic Updates Rules
+
+## Core Principle
+**Always implement optimistic updates for mutations to provide instant user feedback and superior UX.**
+
+## Why Optimistic Updates Are Mandatory
+- **Instant feedback**: Users see changes immediately, not after server response
+- **Perceived performance**: App feels faster and more responsive
+- **Better UX**: Reduces perceived latency from 200-500ms to 0ms
+- **Error handling**: Failed operations can be rolled back gracefully
+- **TypeScript safety**: Strong typing ensures rollback data integrity
+
+## When to Use Optimistic Updates
+
+### ✅ Always Use For:
+- **CREATE operations**: Adding items to lists
+- **UPDATE operations**: Modifying existing data  
+- **DELETE operations**: Removing items
+- **TOGGLE operations**: Like/unlike, favorite/unfavorite
+- **STATUS changes**: Active/inactive, published/draft
+- **SIMPLE data modifications**: Form updates, profile changes
+
+### ❌ Avoid For:
+- **Critical financial operations**: Payments, transfers
+- **Security-sensitive actions**: Permission changes
+- **Complex validations**: Server-side business rule checks
+- **File uploads**: Progress needs server confirmation
+- **Operations with complex side effects**: Cascading data changes
+
+## Implementation Pattern
+
+### Basic Optimistic Update Structure
+```typescript
+const useOptimisticMutation = <TData, TVariables>(
+  mutationFn: (variables: TVariables) => Promise<TData>,
+  queryKey: QueryKey,
+  updateFn: (old: TData, variables: TVariables) => TData
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn,
+    onMutate: async (variables) => {
+      // 1. Cancel outgoing refetches (so they don't overwrite optimistic update)
+      await queryClient.cancelQueries({ queryKey });
+      
+      // 2. Snapshot the previous value
+      const previousData = queryClient.getQueryData<TData>(queryKey);
+      
+      // 3. Optimistically update to the new value
+      queryClient.setQueryData<TData>(queryKey, (old) => 
+        old ? updateFn(old, variables) : old
+      );
+
+      // 4. Return a context object with the snapshotted value
+      return { previousData };
+    },
+    onError: (error, variables, context) => {
+      // 5. If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousData) {
+        queryClient.setQueryData(queryKey, context.previousData);
+      }
+    },
+    onSuccess: (data, variables) => {
+      // 6. Update with actual server response (may differ from optimistic)
+      queryClient.setQueryData(queryKey, data);
+    },
+  });
+};
+```
+
+## Specific Patterns by Operation
+
+### CREATE Operations
+```typescript
+const useCreateTodo = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (newTodo: CreateTodoData) => todoService.create(newTodo),
+    onMutate: async (newTodo) => {
+      await queryClient.cancelQueries({ queryKey: ['todos'] });
+      
+      const previousTodos = queryClient.getQueryData<Todo[]>(['todos']);
+      
+      // Create optimistic todo with temporary ID
+      const optimisticTodo: Todo = {
+        id: `temp-${Date.now()}`,
+        ...newTodo,
+        createdAt: new Date().toISOString(),
+        completed: false,
+      };
+
+      // Add to beginning of list
+      queryClient.setQueryData<Todo[]>(['todos'], (old) => 
+        old ? [optimisticTodo, ...old] : [optimisticTodo]
+      );
+
+      return { previousTodos, optimisticTodo };
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousTodos) {
+        queryClient.setQueryData(['todos'], context.previousTodos);
+      }
+    },
+    onSuccess: (newTodo, variables, context) => {
+      // Replace optimistic todo with real one from server
+      queryClient.setQueryData<Todo[]>(['todos'], (old) => 
+        old ? old.map(todo => 
+          todo.id === context?.optimisticTodo.id ? newTodo : todo
+        ) : [newTodo]
+      );
+    },
+  });
+};
+```
+
+### UPDATE Operations
+```typescript
+const useUpdateTodo = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, updates }: { id: string; updates: Partial<Todo> }) =>
+      todoService.update(id, updates),
+    onMutate: async ({ id, updates }) => {
+      // Cancel queries for both individual todo and todos list
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['todo', id] }),
+        queryClient.cancelQueries({ queryKey: ['todos'] }),
+      ]);
+      
+      const previousTodo = queryClient.getQueryData<Todo>(['todo', id]);
+      const previousTodos = queryClient.getQueryData<Todo[]>(['todos']);
+
+      // Optimistically update individual todo
+      queryClient.setQueryData<Todo>(['todo', id], (old) => 
+        old ? { ...old, ...updates } : old
+      );
+
+      // Optimistically update in todos list
+      queryClient.setQueryData<Todo[]>(['todos'], (old) => 
+        old ? old.map(todo => 
+          todo.id === id ? { ...todo, ...updates } : todo
+        ) : old
+      );
+
+      return { previousTodo, previousTodos, id };
+    },
+    onError: (error, { id }, context) => {
+      if (context?.previousTodo) {
+        queryClient.setQueryData(['todo', id], context.previousTodo);
+      }
+      if (context?.previousTodos) {
+        queryClient.setQueryData(['todos'], context.previousTodos);
+      }
+    },
+    onSuccess: (updatedTodo) => {
+      // Update with server data
+      queryClient.setQueryData(['todo', updatedTodo.id], updatedTodo);
+      queryClient.setQueryData<Todo[]>(['todos'], (old) => 
+        old ? old.map(todo => 
+          todo.id === updatedTodo.id ? updatedTodo : todo
+        ) : old
+      );
+    },
+  });
+};
+```
+
+### DELETE Operations
+```typescript
+const useDeleteTodo = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (todoId: string) => todoService.delete(todoId),
+    onMutate: async (todoId) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['todo', todoId] }),
+        queryClient.cancelQueries({ queryKey: ['todos'] }),
+      ]);
+      
+      const previousTodo = queryClient.getQueryData<Todo>(['todo', todoId]);
+      const previousTodos = queryClient.getQueryData<Todo[]>(['todos']);
+
+      // Optimistically remove from list
+      queryClient.setQueryData<Todo[]>(['todos'], (old) => 
+        old ? old.filter(todo => todo.id !== todoId) : old
+      );
+
+      // Remove individual cache
+      queryClient.removeQueries({ queryKey: ['todo', todoId] });
+
+      return { previousTodo, previousTodos, todoId };
+    },
+    onError: (error, todoId, context) => {
+      // Restore deleted item
+      if (context?.previousTodos) {
+        queryClient.setQueryData(['todos'], context.previousTodos);
+      }
+      if (context?.previousTodo) {
+        queryClient.setQueryData(['todo', todoId], context.previousTodo);
+      }
+    },
+    onSuccess: (_, todoId) => {
+      // Confirm removal
+      queryClient.removeQueries({ queryKey: ['todo', todoId] });
+    },
+  });
+};
+```
+
+### TOGGLE Operations
+```typescript
+const useToggleTodo = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (todoId: string) => todoService.toggle(todoId),
+    onMutate: async (todoId) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ['todo', todoId] }),
+        queryClient.cancelQueries({ queryKey: ['todos'] }),
+      ]);
+      
+      const previousTodo = queryClient.getQueryData<Todo>(['todo', todoId]);
+      const previousTodos = queryClient.getQueryData<Todo[]>(['todos']);
+
+      // Optimistically toggle completed status
+      const toggleUpdate = (todo: Todo) => ({ 
+        ...todo, 
+        completed: !todo.completed,
+        updatedAt: new Date().toISOString(),
+      });
+
+      queryClient.setQueryData<Todo>(['todo', todoId], (old) => 
+        old ? toggleUpdate(old) : old
+      );
+
+      queryClient.setQueryData<Todo[]>(['todos'], (old) => 
+        old ? old.map(todo => 
+          todo.id === todoId ? toggleUpdate(todo) : todo
+        ) : old
+      );
+
+      return { previousTodo, previousTodos, todoId };
+    },
+    onError: (error, todoId, context) => {
+      if (context?.previousTodo) {
+        queryClient.setQueryData(['todo', todoId], context.previousTodo);
+      }
+      if (context?.previousTodos) {
+        queryClient.setQueryData(['todos'], context.previousTodos);
+      }
+    },
+    onSuccess: (updatedTodo) => {
+      queryClient.setQueryData(['todo', updatedTodo.id], updatedTodo);
+      queryClient.setQueryData<Todo[]>(['todos'], (old) => 
+        old ? old.map(todo => 
+          todo.id === updatedTodo.id ? updatedTodo : todo
+        ) : old
+      );
+    },
+  });
+};
+```
+
+## TypeScript Patterns for Optimistic Updates
+
+### Type-Safe Context
+```typescript
+type OptimisticContext<T> = {
+  previousData: T | undefined;
+  optimisticData?: T;
+  id?: string;
+};
+
+type MutationWithOptimistic<TData, TVariables> = UseMutationResult<
+  TData,
+  Error,
+  TVariables,
+  OptimisticContext<TData>
+>;
+```
+
+### Generic Optimistic Hook
+```typescript
+function useOptimisticUpdate<TData, TVariables>(
+  mutationFn: (variables: TVariables) => Promise<TData>,
+  queryKey: QueryKey,
+  optimisticUpdateFn: (oldData: TData, variables: TVariables) => TData
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation<TData, Error, TVariables, OptimisticContext<TData>>({
+    mutationFn,
+    onMutate: async (variables) => {
+      await queryClient.cancelQueries({ queryKey });
+      
+      const previousData = queryClient.getQueryData<TData>(queryKey);
+      
+      if (previousData) {
+        const optimisticData = optimisticUpdateFn(previousData, variables);
+        queryClient.setQueryData<TData>(queryKey, optimisticData);
+        
+        return { previousData, optimisticData };
+      }
+      
+      return { previousData };
+    },
+    onError: (error, variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(queryKey, context.previousData);
+      }
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKey, data);
+    },
+  });
+}
+```
+
+## Component Usage Patterns
+
+### Handling Optimistic States
+```typescript
+const TodoItem: React.FC<{ todo: Todo }> = ({ todo }) => {
+  const toggleMutation = useToggleTodo();
+  const deleteMutation = useDeleteTodo();
+
+  const handleToggle = () => {
+    toggleMutation.mutate(todo.id);
+  };
+
+  const handleDelete = () => {
+    deleteMutation.mutate(todo.id);
+  };
+
+  // Show different styles for pending operations
+  const isPendingToggle = toggleMutation.isPending;
+  const isPendingDelete = deleteMutation.isPending;
+
+  return (
+    <div className={`todo-item ${isPendingDelete ? 'deleting' : ''}`}>
+      <input 
+        type="checkbox" 
+        checked={todo.completed}
+        onChange={handleToggle}
+        disabled={isPendingToggle}
+      />
+      
+      <span className={`todo-text ${todo.completed ? 'completed' : ''}`}>
+        {todo.text}
+      </span>
+      
+      <button 
+        onClick={handleDelete}
+        disabled={isPendingDelete}
+      >
+        {isPendingDelete ? 'Deleting...' : 'Delete'}
+      </button>
+      
+      {/* Show error state */}
+      {toggleMutation.error && (
+        <span className="error">Failed to toggle: {toggleMutation.error.message}</span>
+      )}
+      {deleteMutation.error && (
+        <span className="error">Failed to delete: {deleteMutation.error.message}</span>
+      )}
+    </div>
+  );
+};
+```
+
+## Error Handling for Optimistic Updates
+
+### User-Friendly Error Messages
+```typescript
+const useOptimisticWithToast = <TData, TVariables>(
+  mutationFn: (variables: TVariables) => Promise<TData>,
+  options: {
+    queryKey: QueryKey;
+    updateFn: (old: TData, variables: TVariables) => TData;
+    successMessage: string;
+    errorMessage: string;
+  }
+) => {
+  const { queryKey, updateFn, successMessage, errorMessage } = options;
+  
+  return useMutation({
+    mutationFn,
+    onMutate: async (variables) => {
+      // ... optimistic update logic
+    },
+    onError: (error, variables, context) => {
+      // Rollback and show error
+      if (context?.previousData) {
+        queryClient.setQueryData(queryKey, context.previousData);
+      }
+      toast.error(`${errorMessage}: ${error.message}`);
+    },
+    onSuccess: () => {
+      toast.success(successMessage);
+    },
+  });
+};
+```
+
+## Testing Optimistic Updates
+
+### Mock Testing Pattern
+```typescript
+describe('useUpdateTodo optimistic updates', () => {
+  it('should optimistically update todo and rollback on error', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+
+    // Set initial data
+    queryClient.setQueryData(['todos'], [mockTodo]);
+
+    // Mock failed API call
+    jest.mocked(todoService.update).mockRejectedValue(new Error('Failed'));
+
+    const { result } = renderHook(() => useUpdateTodo(), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
+      ),
+    });
+
+    // Trigger optimistic update
+    result.current.mutate({ id: mockTodo.id, updates: { completed: true } });
+
+    // Should immediately show optimistic update
+    const optimisticData = queryClient.getQueryData(['todos']);
+    expect(optimisticData[0].completed).toBe(true);
+
+    // Wait for mutation to complete and rollback
+    await waitFor(() => {
+      const rolledBackData = queryClient.getQueryData(['todos']);
+      expect(rolledBackData[0].completed).toBe(false); // Original value
+    });
+  });
+});
+```
+
+## Performance Benefits
+- **0ms perceived latency** for user actions
+- **Reduced server load** through intelligent caching
+- **Better user engagement** through immediate feedback
+- **Graceful error handling** without losing user context
+- **TypeScript safety** prevents rollback data corruption

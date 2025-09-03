@@ -1,0 +1,260 @@
+# Styling Rules (CSS/SCSS)
+
+## CSS Variables
+- Always use CSS variables where possible for consistent theming
+- Create new CSS variable in the `:root` styles if it doesn't exist
+- Use CSS properties for colors (easy way to implement dark mode)
+- Group related variables together (colors, spacing, typography)
+
+```css
+:root {
+  /* Colors - Always use HSLA */
+  --primary-color: hsla(210, 100%, 50%, 1);
+  --secondary-color: hsla(208, 7%, 46%, 1);
+  --success-color: hsla(134, 61%, 41%, 1);
+  --danger-color: hsla(354, 70%, 54%, 1);
+  --background-color: hsla(0, 0%, 100%, 1);
+  --text-color: hsla(210, 12%, 16%, 1);
+  --border-color: hsla(210, 18%, 87%, 1);
+  
+  /* Spacing */
+  --spacing-3xs: 0.125rem;  /* 2px */
+  --spacing-2xs: 0.25rem;   /* 4px */
+  --spacing-xs: 0.375rem;   /* 6px */
+  --spacing-sm: 0.5rem;     /* 8px */
+  --spacing-smd: 0.75rem;   /* 12px */
+  --spacing-md: 1rem;       /* 16px */
+  --spacing-mg: 1.25rem;    /* 20px */
+  --spacing-lg: 1.5rem;     /* 24px */
+  --spacing-xl: 2rem;       /* 32px */
+  --spacing-2xl: 2.5rem;    /* 40px */
+  --spacing-3xl: 3rem;      /* 48px */
+  
+  /* Typography */
+  --font-family-primary: 'Inter', sans-serif;
+  --font-size-base: 1rem;
+  --line-height-base: 1.5;
+}
+```
+
+## SCSS Best Practices
+- Since we are using SCSS, nest styles to reduce duplication
+- Keep nesting levels under 4 deep for maintainability
+- Use SCSS variables for computed values and mixins
+- Leverage SCSS functions for color manipulation and calculations
+- Use the comprehensive spacing scale: 3xs, 2xs, xs, sm, smd, md, mg, lg, xl, 2xl, 3xl
+
+```scss
+// Spacing usage examples
+.component {
+  padding: var(--spacing-lg);        // 24px
+  margin-bottom: var(--spacing-xl);  // 32px
+  gap: var(--spacing-smd);          // 12px
+  
+  .small-element {
+    margin: var(--spacing-xs);       // 6px
+  }
+  
+  .large-section {
+    padding: var(--spacing-2xl);     // 40px
+  }
+}
+```
+
+```scss
+.card {
+  background: var(--background-color);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  
+  .header {
+    padding: var(--spacing-lg);
+    border-bottom: 1px solid var(--border-color);
+    font-weight: 600;
+  }
+  
+  .content {
+    padding: var(--spacing-lg);
+    
+    .title {
+      margin-bottom: var(--spacing-smd);
+      color: var(--text-color);
+    }
+    
+    .description {
+      color: var(--secondary-color);
+      line-height: var(--line-height-base);
+    }
+  }
+  
+  .footer {
+    padding: var(--spacing-lg);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-md);
+  }
+}
+```
+
+## Component Styling
+- Use CSS Modules for component-specific styles
+- Name classes descriptively based on what they are, not BEM methodology
+- Keep styles co-located with components
+- Use descriptive class names that reflect component purpose
+- Make use of SCSS nesting for related elements
+
+## Responsive Design
+- Mobile-first approach: start with mobile styles, then enhance for larger screens
+- Use CSS Grid for layout, Flexbox for alignment
+- Use relative units (rem, em, %) instead of fixed pixels when appropriate
+- Define consistent breakpoints and use them across the project
+
+```scss
+// Breakpoint variables
+$mobile: 480px;
+$tablet: 768px;
+$desktop: 1024px;
+$large-desktop: 1200px;
+
+.container {
+  width: 100%;
+  padding: var(--spacing-lg);
+  
+  @media (min-width: $tablet) {
+    padding: var(--spacing-xl);
+  }
+  
+  @media (min-width: $desktop) {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--spacing-2xl);
+  }
+}
+```
+
+## Color Management
+- Always use HSLA values for all colors (including alpha channel)
+- Create semantic color names instead of literal ones
+- Implement consistent color palettes with alpha variations
+- Plan for dark mode from the start using HSLA values
+
+```css
+:root {
+  /* Base color values */
+  --primary-hue: 210;
+  --primary-saturation: 100%;
+  --primary-lightness: 50%;
+  
+  /* Primary color variations with alpha */
+  --color-primary: hsla(var(--primary-hue), var(--primary-saturation), var(--primary-lightness), 1);
+  --color-primary-light: hsla(var(--primary-hue), var(--primary-saturation), 75%, 1);
+  --color-primary-dark: hsla(var(--primary-hue), var(--primary-saturation), 25%, 1);
+  --color-primary-transparent: hsla(var(--primary-hue), var(--primary-saturation), var(--primary-lightness), 0.1);
+  
+  /* Semantic colors */
+  --color-surface: hsla(0, 0%, 100%, 1);
+  --color-surface-elevated: hsla(0, 0%, 100%, 0.95);
+  --color-text-primary: hsla(210, 12%, 16%, 1);
+  --color-text-secondary: hsla(210, 12%, 16%, 0.7);
+  --color-text-disabled: hsla(210, 12%, 16%, 0.4);
+}
+```
+
+## Layout Guidelines
+- Use CSS Grid for page layouts, Flexbox for component layouts
+- Avoid fixed heights unless absolutely necessary
+- Use logical properties (margin-inline, padding-block) for better RTL support
+- Create reusable layout utility classes
+
+## Performance Optimization
+- Minimize CSS bundle size by removing unused styles
+- Use CSS containment where appropriate
+- Avoid expensive CSS operations (complex selectors, excessive animations)
+- Optimize font loading and use system font fallbacks
+
+## Animation and Transitions
+- Use CSS animations over JavaScript when possible
+- Provide `prefers-reduced-motion` alternatives
+- Keep animations subtle and purposeful
+- Use consistent timing functions across the application
+
+```scss
+// Animation utilities
+@mixin transition-base {
+  transition-duration: 0.2s;
+  transition-timing-function: ease-in-out;
+}
+
+.button {
+  @include transition-base;
+  background-color: var(--color-primary);
+  color: var(--color-surface);
+  transition-property: background-color, box-shadow;
+  
+  &:hover {
+    background-color: var(--color-primary-light);
+  }
+  
+  &:active {
+    background-color: var(--color-primary-dark);
+  }
+  
+  &:disabled {
+    background-color: hsla(210, 12%, 16%, 0.1);
+    color: var(--color-text-disabled);
+  }
+  
+  .icon {
+    margin-right: var(--spacing-smd);
+    
+    &.loading {
+      animation: spin 1s linear infinite;
+    }
+  }
+}
+}
+```
+
+## Accessibility in Styles
+- Maintain sufficient color contrast ratios (4.5:1 minimum) using HSLA values
+- Ensure focus indicators are visible and consistent
+- Don't rely solely on color to convey information
+- Test with screen readers and keyboard navigation
+- Use HSLA alpha channel for subtle UI states and overlays
+
+```scss
+.form-input {
+  border: 2px solid var(--border-color);
+  background: var(--color-surface);
+  
+  &:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-primary-transparent);
+  }
+  
+  &:invalid {
+    border-color: var(--danger-color);
+    background: hsla(354, 70%, 54%, 0.05);
+  }
+  
+  &:disabled {
+    background: hsla(210, 18%, 87%, 0.5);
+    color: var(--color-text-disabled);
+    cursor: not-allowed;
+  }
+}
+```
+
+## File Organization
+- One stylesheet per component
+- Use partial SCSS files with underscores (`_variables.scss`)
+- Create a main stylesheet that imports all partials
+- Group global styles, utilities, and component styles separately
+
+## Documentation in Styles
+- Comment complex calculations or non-obvious style choices
+- Document color schemes and their intended usage
+- Maintain a living style guide for consistent component usage
+- Use meaningful variable and mixin names that explain their purpose

@@ -1,0 +1,544 @@
+# React Patterns and Anti-Patterns
+
+### 1. Avoid Over-Optimization
+- Don't prematurely optimize during prototyping (POC)
+- Profile first, optimize second
+- Focus on user experience over perfect code
+- Remember: premature optimization is the root of all evil
+
+### 2. Avoid Deep Nesting
+- Use fragments (`<></>`) to avoid wrapper divs
+- Some html issues can be solved with proper css layouts
+- Pass functions as props instead of nesting components
+- Extract complex JSX into separate components
+- Use early returns to reduce nesting levels
+
+```typescript
+// Bad: Deep nesting
+const UserProfile = ({ user }: { user: User }) => {
+  return (
+    <div>
+      {user && (
+        <div>
+          {user.isActive ? (
+            <div>
+              {user.posts && user.posts.length > 0 ? (
+                <div>
+                  {user.posts.map(post => (
+                    <div key={post.id}>{post.title}</div>
+                  ))}
+                </div>
+              ) : (
+                <div>No posts</div>
+              )}
+            </div>
+          ) : (
+            <div>User inactive</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Good: Early returns and fragments
+const UserProfile = ({ user }: { user: User }) => {
+  if (!user) return null;
+  if (!user.isActive) return <div>User inactive</div>;
+  if (!user.posts || user.posts.length === 0) return <div>No posts</div>;
+
+  return (
+    <>
+      {user.posts.map(post => (
+        <PostItem key={post.id} post={post} />
+      ))}
+    </>
+  );
+};
+```
+
+### 3. Component Organization
+- One component per file and directory
+- Keep components focused on single responsibility
+- Use functional programming principles
+- Pass functions as props for reusability
+
+### 4. Avoid Prop Drilling
+- Use TanstackQuery cache or Redux toolkit state for deeply nested data
+- Implement state management (TanstackQuery cache/Redux/Zustand) for complex state
+- Use component composition to avoid passing props through multiple levels
+- Consider using render props or compound components
+
+```typescript
+// Bad: Prop drilling
+const App = () => {
+  const [user, setUser] = useState<User | null>(null);
+  return <Dashboard user={user} setUser={setUser} />;
+};
+
+const Dashboard = ({ user, setUser }: DashboardProps) => {
+  return <UserProfile user={user} setUser={setUser} />;
+};
+
+const UserProfile = ({ user, setUser }: UserProfileProps) => {
+  return <UserSettings user={user} setUser={setUser} />;
+};
+
+// Good: Context
+const UserContext = createContext<UserContextType | null>(null);
+
+const App = () => {
+  const [user, setUser] = useState<User | null>(null);
+  return (
+    <UserContext.Provider value={{ user, setUser }}>
+      <Dashboard />
+    </UserContext.Provider>
+  );
+};
+
+const UserSettings = () => {
+  const { user, setUser } = useContext(UserContext)!;
+  // Component implementation
+};
+```
+
+### 5. State Management Patterns
+- Keep state as local as possible
+- Lift state up only when necessary
+- Use reducers for complex state logic
+- Implement proper state normalization
+
+```typescript
+// Good: Local state management
+const TodoList = () => {
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [filter, setFilter] = useState<FilterType>('all');
+
+  const addTodo = useCallback((text: string) => {
+    setTodos(prev => [...prev, { id: Date.now(), text, completed: false }]);
+  }, []);
+
+  const toggleTodo = useCallback((id: number) => {
+    setTodos(prev => prev.map(todo => 
+      todo.id === id ? { ...todo, completed: !todo.completed } : todo
+    ));
+  }, []);
+
+  const filteredTodos = useMemo(() => {
+    return todos.filter(todo => {
+      if (filter === 'completed') return todo.completed;
+      if (filter === 'active') return !todo.completed;
+      return true;
+    });
+  }, [todos, filter]);
+
+  return (
+    <>
+      <AddTodoForm onAdd={addTodo} />
+      <TodoFilter filter={filter} onChange={setFilter} />
+      <TodoItems todos={filteredTodos} onToggle={toggleTodo} />
+    </>
+  );
+};
+```
+
+## Advanced React Patterns
+
+### Compound Components
+- Create components that work together as a system
+- Provide flexible APIs for component composition
+- Use React Context for internal communication
+
+```typescript
+// Compound component pattern
+const Card = ({ children }: { children: React.ReactNode }) => {
+  return <div className="card">{children}</div>;
+};
+
+const CardHeader = ({ children }: { children: React.ReactNode }) => {
+  return <div className="card-header">{children}</div>;
+};
+
+const CardContent = ({ children }: { children: React.ReactNode }) => {
+  return <div className="card-content">{children}</div>;
+};
+
+const CardFooter = ({ children }: { children: React.ReactNode }) => {
+  return <div className="card-footer">{children}</div>;
+};
+
+// Usage
+<Card>
+  <CardHeader>Title</CardHeader>
+  <CardContent>Content here</CardContent>
+  <CardFooter>Footer</CardFooter>
+</Card>
+```
+
+### Render Props Pattern
+- Provide flexible component APIs
+- Share logic between components
+- Allow consumers to control rendering
+
+```typescript
+type DataFetcherProps<T> = {
+  url: string;
+  children: (data: { 
+    data: T | null; 
+    loading: boolean; 
+    error: string | null; 
+  }) => React.ReactNode;
+};
+
+const DataFetcher = <T,>({ url, children }: DataFetcherProps<T>) => {
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchData(url)
+      .then(setData)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, [url]);
+
+  return <>{children({ data, loading, error })}</>;
+};
+
+// Usage
+<DataFetcher<User[]> url="/api/users">
+  {({ data, loading, error }) => {
+    if (loading) return <LoadingSpinner />;
+    if (error) return <ErrorMessage message={error} />;
+    return <UserList users={data || []} />;
+  }}
+</DataFetcher>
+```
+
+### Custom Hooks Pattern
+- Extract component logic into reusable hooks
+- Keep components focused on rendering
+- Share stateful logic between components
+- **Always create a new hook using TanStack Query for API calls**
+- **Always implement optimistic updates in mutation hooks**
+
+```typescript
+// Custom hook for form management
+const useForm = <T>(initialValues: T, onSubmit: (values: T) => void) => {
+  const [values, setValues] = useState<T>(initialValues);
+  const [errors, setErrors] = useState<Partial<Record<keyof T, string>>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleChange = (name: keyof T, value: T[keyof T]) => {
+    setValues(prev => ({ ...prev, [name]: value }));
+    if (errors[name]) {
+      setErrors(prev => ({ ...prev, [name]: undefined }));
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setIsSubmitting(true);
+    
+    try {
+      await onSubmit(values);
+    } catch (error) {
+      console.error('Form submission error:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return {
+    values,
+    errors,
+    isSubmitting,
+    handleChange,
+    handleSubmit,
+    setErrors
+  };
+};
+```
+
+### API Hooks with TanStack Query
+**Always create custom hooks using TanStack Query for API calls. Never make direct API calls in components.**
+
+```typescript
+// API service functions (in src/libs/services/)
+const userService = {
+  getUser: async (id: string): Promise<User> => {
+    const response = await fetch(`/api/users/${id}`);
+    if (!response.ok) throw new Error('Failed to fetch user');
+    return response.json();
+  },
+  
+  updateUser: async (id: string, data: Partial<User>): Promise<User> => {
+    const response = await fetch(`/api/users/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error('Failed to update user');
+    return response.json();
+  }
+};
+
+// Query hooks (in src/libs/hooks/api/)
+export const useUser = (userId: string) => {
+  return useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => userService.getUser(userId),
+    enabled: !!userId,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+export const useUsers = (params?: { page?: number; search?: string }) => {
+  return useQuery({
+    queryKey: ['users', params],
+    queryFn: () => userService.getUsers(params),
+    keepPreviousData: true,
+  });
+};
+
+// Mutation hooks
+export const useUpdateUser = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Partial<User> }) =>
+      userService.updateUser(id, data),
+    onSuccess: (updatedUser) => {
+      // Update the user cache
+      queryClient.setQueryData(['user', updatedUser.id], updatedUser);
+      
+      // Invalidate users list to refetch
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (error) => {
+      console.error('User update failed:', error);
+    },
+  });
+};
+
+export const useCreateUser = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (userData: CreateUserData) => userService.createUser(userData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+};
+```
+
+### API Hook Usage in Components
+```typescript
+// Component usage with optimistic updates
+const UserProfile: React.FC<{ userId: string }> = ({ userId }) => {
+  const { data: user, isLoading, error } = useUser(userId);
+  const updateUserMutation = useUpdateUser();
+
+  const handleUpdateUser = (updates: Partial<User>) => {
+    // Optimistic update provides instant feedback
+    updateUserMutation.mutate({ id: userId, updates });
+  };
+
+  // Show optimistic state while mutation is pending
+  const displayUser = user ? {
+    ...user,
+    // Show pending changes immediately (optimistic updates handle this)
+  } : null;
+
+  if (isLoading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage error={error} />;
+  if (!displayUser) return <NotFound />;
+
+  return (
+    <div>
+      <h1>{displayUser.name}</h1>
+      <UserForm 
+        user={displayUser} 
+        onSubmit={handleUpdateUser}
+        isSubmitting={updateUserMutation.isPending}
+        // Show error state for failed optimistic updates
+        error={updateUserMutation.error?.message}
+      />
+      
+      {/* Optional: Show optimistic update indicator */}
+      {updateUserMutation.isPending && (
+        <div className="optimistic-indicator">
+          Saving changes...
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+## Performance Optimization Patterns
+
+### Memoization Strategy
+- Use React.memo for component memoization
+- Use useMemo for expensive calculations
+- Use useCallback for event handlers
+
+```typescript
+// Memoized list component
+const TodoItem = React.memo<{ 
+  todo: Todo; 
+  onToggle: (id: string) => void; 
+}>(({ todo, onToggle }) => {
+  const handleToggle = useCallback(() => {
+    onToggle(todo.id);
+  }, [todo.id, onToggle]);
+
+  return (
+    <div onClick={handleToggle}>
+      {todo.text}
+    </div>
+  );
+});
+
+// Parent component
+const TodoList = ({ todos }: { todos: Todo[] }) => {
+  const handleToggle = useCallback((id: string) => {
+    // Toggle logic
+  }, []);
+
+  return (
+    <>
+      {todos.map(todo => (
+        <TodoItem key={todo.id} todo={todo} onToggle={handleToggle} />
+      ))}
+    </>
+  );
+};
+```
+
+### Lazy Loading Pattern
+- Code split at route level
+- Lazy load heavy components
+- Implement progressive loading
+
+```typescript
+// Route-level code splitting
+const HomePage = lazy(() => import('../pages/HomePage'));
+const DashboardPage = lazy(() => import('../pages/DashboardPage'));
+
+const AppRouter = () => {
+  return (
+    <Router>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
+        </Routes>
+      </Suspense>
+    </Router>
+  );
+};
+```
+
+## Error Handling Patterns
+
+### Error Boundaries
+- Implement error boundaries for component trees
+- Provide fallback UI for errors
+- Log errors for debugging
+
+```typescript
+type ErrorBoundaryState = {
+  hasError: boolean;
+  error?: Error;
+};
+
+class ErrorBoundary extends React.Component<
+  React.PropsWithChildren<{}>,
+  ErrorBoundaryState
+> {
+  constructor(props: React.PropsWithChildren<{}>) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <ErrorFallback error={this.state.error} />;
+    }
+
+    return this.props.children;
+  }
+}
+```
+
+## Common Anti-Patterns to Avoid
+
+### 1. Creating Components Inside Render
+```typescript
+// Bad
+const Parent = () => {
+  const Child = () => <div>Child</div>;
+  return <Child />;
+};
+
+// Good
+const Child = () => <div>Child</div>;
+const Parent = () => <Child />;
+```
+
+### 2. Mutating State Directly
+```typescript
+// Bad
+const [items, setItems] = useState([]);
+const addItem = (item) => {
+  items.push(item); // Direct mutation
+  setItems(items);
+};
+
+// Good
+const addItem = (item) => {
+  setItems(prev => [...prev, item]);
+};
+```
+
+### 3. Using Array Index as Key
+```typescript
+// Bad
+{items.map((item, index) => (
+  <Item key={index} item={item} />
+))}
+
+// Good
+{items.map(item => (
+  <Item key={item.id} item={item} />
+))}
+```
+
+### 4. Not Cleaning Up Side Effects
+```typescript
+// Bad
+useEffect(() => {
+  const timer = setInterval(() => {
+    // Do something
+  }, 1000);
+}, []);
+
+// Good
+useEffect(() => {
+  const timer = setInterval(() => {
+    // Do something
+  }, 1000);
+
+  return () => clearInterval(timer);
+}, []);
+```

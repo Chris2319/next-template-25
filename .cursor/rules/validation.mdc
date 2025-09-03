@@ -1,0 +1,71 @@
+# Validation Rules
+
+## Schema Creation
+- Always create a schema when validation is required
+- Schemas are located in `src/libs/schemas`
+- Make use of the validation helpers
+- Schemas must always be typed (use types, not interfaces)
+- One schema per entity/form - keep them focused and single-purpose
+
+## Schema Structure
+```typescript
+export const AuthSchema: Schema<AuthCredentials> = {
+    email: (obj: AuthCredentials, context?: ValidationContext): SchemaResponse => {
+        return {
+            valid: !!obj.email && (context?.max || 0) > 0,
+            message: 'Email is required',
+        }
+    },
+    password: validators<AuthCredentials>(
+        (obj) => required({value: obj.email, message: 'Email is required'}),
+        // (obj) => betweenMinMax({value: obj.password, min: 5, max: 10})
+    ),
+}
+```
+
+## Validation Usage
+- Make use of the validation function to validate against the schema
+- Example:
+```typescript
+const {valid, results} = Validation({objectToValidate: deliveryAddress, schema: DeliveryAddressSchema});
+```
+
+## Input Integration
+- The results can be used with the `inputWithValidation.tsx`
+- Props `valid` and `validationMessage` link to results: `{[K in keyof T]?: {valid: boolean; message: string}}`
+- The result `[K in keyof T]` should match the validation object type
+```typescript
+<InputWithValidation 
+    value={credentials.password} 
+    valid={results.password?.valid ?? true} 
+    validationMessage={results.password?.message} 
+/>
+```
+
+## Error Handling
+- Always provide clear, user-friendly error messages
+- Use consistent messaging patterns across the application
+- Group related validation errors together
+- Display field-level errors immediately, form-level errors on submit
+- Never show technical error details to users
+
+## Validation Best Practices
+- Validate on both client and server (never trust client-only validation)
+- Use progressive validation (validate as user types for better UX)
+- Implement debounced validation for real-time feedback
+- Cache validation results to avoid redundant checks
+- Always validate required fields first, then format, then business rules
+- Use conditional validation based on other field values when needed
+
+## Common Validation Patterns
+- Email: Use proper regex + format validation
+- Passwords: Minimum 8 chars, at least one uppercase, lowercase, number
+- Phone: Format according to regional standards
+- Dates: Validate both format and logical constraints (not in future, etc.)
+- URLs: Validate protocol, domain, and accessibility when needed
+
+## Performance Considerations
+- Avoid expensive validation operations on every keystroke
+- Use memoization for complex validation logic
+- Batch validation calls when possible
+- Lazy load validation rules for large forms

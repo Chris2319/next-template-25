@@ -1,0 +1,314 @@
+# Performance Rules
+
+## React Performance
+- Use `React.memo` for components that render frequently with same props
+- Implement `useMemo` for expensive calculations
+- Use `useCallback` for event handlers passed to child components
+- Avoid creating objects/arrays during render
+- Lazy load components and routes when appropriate
+
+```typescript
+// Memoized expensive calculation
+const ExpensiveComponent: React.FC<{data: DataType[]}> = ({ data }) => {
+  const processedData = useMemo(() => {
+    return data.map(item => expensiveProcessing(item));
+  }, [data]);
+
+  return <div>{processedData.map(...)}</div>;
+};
+
+// Memoized event handler
+const ParentComponent: React.FC = () => {
+  const handleClick = useCallback((id: string) => {
+    // Handle click logic
+  }, []);
+
+  return <ChildComponent onClick={handleClick} />;
+};
+```
+
+## Bundle Optimization
+- Use dynamic imports for code splitting
+- Implement route-based code splitting
+- Remove unused dependencies regularly
+- Use tree shaking for library imports
+- Optimize third-party library usage
+
+```typescript
+// Code splitting with dynamic imports
+const LazyComponent = lazy(() => import('../components/HeavyComponent'));
+
+// Tree shaking friendly imports
+import { debounce } from 'lodash-es';
+// Instead of: import _ from 'lodash';
+```
+
+## Image and Asset Optimization
+- Use Next.js Image component for automatic optimization
+- Implement lazy loading for images below the fold
+- Use appropriate image formats (WebP, AVIF when supported)
+- Optimize SVG files and use them efficiently
+- Implement responsive images for different screen sizes
+
+## Data Fetching Performance
+- **Always use TanStack Query for all API calls through custom hooks**
+- Implement proper caching strategies with staleTime and gcTime
+- Avoid waterfalls - fetch data in parallel when possible
+- Implement pagination for large datasets using keepPreviousData
+- Use streaming for real-time data
+- Never make direct API calls in components - always create a custom hook
+
+## TanStack Query Performance Benefits
+- **Automatic caching and background updates**
+- **Request deduplication** - prevents duplicate API calls
+- **MANDATORY Optimistic updates** - 0ms perceived latency for user actions
+- **Parallel and dependent queries** for efficient data loading
+- **Built-in retry logic** with exponential backoff
+- **Memory management** with garbage collection
+
+## Optimistic Updates Performance Impact
+**Always implement optimistic updates - they provide the biggest UX performance improvement.**
+
+### Performance Benefits:
+- **0ms perceived latency** - Users see changes instantly
+- **Reduced server round-trips** - UI updates don't wait for server
+- **Better perceived performance** - App feels 200-500ms faster
+- **Improved user engagement** - Instant feedback increases user satisfaction
+- **Error resilience** - Failed operations roll back gracefully
+
+```typescript
+// Without optimistic updates (slow UX)
+const SlowUpdateComponent = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const handleUpdate = async () => {
+    setIsLoading(true);
+    try {
+      await updateAPI(); // User waits 200-500ms
+      // Then UI updates
+    } finally {
+      setIsLoading(false);
+    }
+  };
+};
+
+// With optimistic updates (instant UX)
+const FastUpdateComponent = () => {
+  const updateMutation = useOptimisticUpdate();
+  
+  const handleUpdate = () => {
+    updateMutation.mutate(data); // UI updates instantly
+    // Rollback only if error occurs
+  };
+};
+```
+
+```typescript
+// Parallel data fetching
+const useUserDashboard = (userId: string) => {
+  const userQuery = useQuery({
+    queryKey: ['user', userId],
+    queryFn: () => fetchUser(userId)
+  });
+
+  const postsQuery = useQuery({
+    queryKey: ['posts', userId],
+    queryFn: () => fetchUserPosts(userId)
+  });
+
+  const analyticsQuery = useQuery({
+    queryKey: ['analytics', userId],
+    queryFn: () => fetchUserAnalytics(userId)
+  });
+
+  return {
+    user: userQuery.data,
+    posts: postsQuery.data,
+    analytics: analyticsQuery.data,
+    isLoading: userQuery.isLoading || postsQuery.isLoading || analyticsQuery.isLoading
+  };
+};
+```
+
+## State Management Performance
+- Keep state as local as possible
+- Use state normalization for complex nested data
+- Implement proper memoization in selectors
+- Avoid unnecessary state updates
+- Use immer for immutable updates when needed
+
+## Network Performance
+- Implement request deduplication
+- Use HTTP caching headers appropriately
+- Implement retry logic with exponential backoff
+- Minimize payload sizes
+- Use compression (gzip/brotli)
+
+```typescript
+// Request deduplication example
+const requestCache = new Map();
+
+export const fetchWithDeduplication = async (url: string) => {
+  if (requestCache.has(url)) {
+    return requestCache.get(url);
+  }
+
+  const promise = fetch(url).then(response => response.json());
+  requestCache.set(url, promise);
+
+  // Clear from cache after completion
+  promise.finally(() => {
+    requestCache.delete(url);
+  });
+
+  return promise;
+};
+```
+
+## Memory Management
+- Clean up event listeners in useEffect cleanup
+- Cancel pending requests when components unmount
+- Clear timers and intervals properly
+- Avoid memory leaks in closures
+- Use WeakMap/WeakSet for object references when appropriate
+
+```typescript
+const useApiCall = (url: string) => {
+  const [data, setData] = useState(null);
+  
+  useEffect(() => {
+    const controller = new AbortController();
+    
+    fetchData(url, { signal: controller.signal })
+      .then(setData)
+      .catch(error => {
+        if (error.name !== 'AbortError') {
+          console.error('Fetch error:', error);
+        }
+      });
+
+    // Cleanup function
+    return () => {
+      controller.abort();
+    };
+  }, [url]);
+
+  return data;
+};
+```
+
+## Rendering Performance
+- Minimize re-renders by optimizing dependency arrays
+- Use keys properly in lists
+- Avoid inline styles and functions
+- Implement virtualization for long lists
+- Use CSS transforms for animations
+
+```typescript
+// Proper key usage
+const ItemList: React.FC<{items: Item[]}> = ({ items }) => {
+  return (
+    <div>
+      {items.map(item => (
+        <ItemComponent key={item.id} item={item} />
+      ))}
+    </div>
+  );
+};
+
+// Virtual scrolling for large lists
+import { FixedSizeList as List } from 'react-window';
+
+const VirtualizedList: React.FC<{items: Item[]}> = ({ items }) => {
+  const Row = ({ index, style }: {index: number, style: React.CSSStyle}) => (
+    <div style={style}>
+      <ItemComponent item={items[index]} />
+    </div>
+  );
+
+  return (
+    <List
+      height={400}
+      itemCount={items.length}
+      itemSize={80}
+    >
+      {Row}
+    </List>
+  );
+};
+```
+
+## CSS Performance
+- Use CSS containment for isolated sections
+- Minimize layout thrashing
+- Use transform and opacity for animations
+- Avoid expensive CSS selectors
+- Implement critical CSS loading
+
+## Loading States and UX
+- Implement skeleton screens for better perceived performance
+- Use optimistic updates for immediate feedback
+- Show progress indicators for long operations
+- Implement proper error states with retry options
+
+```typescript
+const useOptimisticUpdate = <T>(
+  initialData: T[],
+  updateFn: (data: T[]) => Promise<T[]>
+) => {
+  const [data, setData] = useState(initialData);
+  const [isOptimistic, setIsOptimistic] = useState(false);
+
+  const optimisticUpdate = async (optimisticData: T[]) => {
+    setData(optimisticData);
+    setIsOptimistic(true);
+
+    try {
+      const result = await updateFn(optimisticData);
+      setData(result);
+    } catch (error) {
+      setData(initialData); // Rollback on error
+      throw error;
+    } finally {
+      setIsOptimistic(false);
+    }
+  };
+
+  return { data, optimisticUpdate, isOptimistic };
+};
+```
+
+## Monitoring and Measurement
+- Use React DevTools Profiler for performance analysis
+- Implement Core Web Vitals monitoring
+- Track bundle sizes in CI/CD
+- Monitor real user performance metrics
+- Set up performance budgets
+
+## Caching Strategies
+- Implement proper browser caching
+- Use service workers for offline functionality
+- Cache API responses appropriately
+- Implement stale-while-revalidate patterns
+- Use local storage/session storage efficiently
+
+## Performance Best Practices
+- Follow the "Measure, Don't Guess" principle
+- Prioritize critical rendering path
+- Implement progressive enhancement
+- Use performance budgets in development
+- Regular performance audits and optimization
+
+## Mobile Performance
+- Optimize for mobile devices specifically
+- Reduce JavaScript execution time
+- Minimize main thread blocking
+- Implement proper touch handling
+- Consider device capabilities and network conditions
+
+## Server-Side Performance (Next.js)
+- Use Server-Side Rendering (SSR) appropriately
+- Implement Static Site Generation (SSG) when possible
+- Use Incremental Static Regeneration (ISR) for dynamic content
+- Optimize API routes performance
+- Implement proper caching at the server level

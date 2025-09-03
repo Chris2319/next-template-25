@@ -1,0 +1,99 @@
+# Function Rules
+
+## Typing Requirements
+- Must always be typed - both input and output
+- It doesn't need a new type, something like `string[]` or `boolean` is valid
+- Must make use of types, not interfaces
+- Use union types for multiple possible return types
+- Prefer generic types for reusable functions
+
+## Documentation
+- Don't add comments inside functions (code should be self-explanatory)
+- Make sure the main functions have JSDoc comments
+- Include `@param` and `@returns` in JSDoc for complex functions
+- Document any side effects or assumptions in JSDoc
+
+```typescript
+/**
+ * Validates user credentials and returns authentication status
+ * @param credentials - User login credentials
+ * @returns Promise resolving to authentication result
+ */
+const validateUserCredentials = async (credentials: AuthCredentials): Promise<AuthResult> => {
+    // Implementation here
+}
+```
+
+## Function Design Principles
+- Functions should have no side effects (pure functions preferred)
+- Do one thing well (single responsibility)
+- Keep functions small (preferably under 100 lines)
+- Use early returns to reduce nesting
+- Avoid deep nesting (max 5 levels)
+
+## Naming Conventions
+- Use descriptive naming: `getFunction`, `postFunction`, `onClickFunction`, `sortByDate`, `isPersonMarried`
+- Boolean functions should start with `is`, `has`, `can`, `should`
+- Event handlers should start with `on` or `handle`
+- Async functions should indicate their async nature when not obvious
+- Use verbs for actions, nouns for data getters
+
+## Parameter Guidelines
+- Prefer fewer parameters (max 3-4 parameters)
+- Always use object parameters when more than 1
+- Use default parameters instead of undefined checks
+- Order parameters: required first, optional last
+- Use destructuring for object parameters
+
+```typescript
+// Good
+const createUser = ({ name, email, age = 18 }: CreateUserParams): User => { }
+
+// Bad
+const createUser = (name: string, email: string, age?: number, isActive?: boolean): User => { }
+```
+
+## Return Values
+- Be consistent with return types across similar functions
+- Use union types for multiple possible outcomes
+- Prefer explicit returns over implicit undefined
+- Return meaningful error objects instead of throwing when appropriate
+
+## Comparison and Logic
+- Make use of enums when strings are used for comparisons
+- Use strict equality (`===`) unless loose equality is specifically needed
+- Prefer guard clauses over nested if statements
+- Use switch statements for multiple conditions on the same variable
+
+## Error Handling
+- Add `console.error()` on all catch blocks
+- Use try-catch for async operations
+- Return error objects rather than throwing when the caller should handle errors
+- Use type guards for runtime type checking
+
+## Performance Considerations
+- Use memoization for expensive computations
+- Avoid creating functions inside render methods
+- Use callbacks with useCallback for child component props
+- Prefer array methods (map, filter, reduce) over manual loops
+
+## Function Categories
+- **Pure Functions**: No side effects, same input = same output
+- **Event Handlers**: Functions that respond to user interactions
+- **Data Transformers**: Functions that convert data from one format to another
+- **Validators**: Functions that check data integrity
+- **API Services**: Pure functions that make HTTP requests (used by TanStack Query hooks)
+- **API Hooks**: Custom hooks using TanStack Query for data fetching and mutations
+
+## API Function Requirements
+- **Always create custom hooks using TanStack Query for API calls**
+- Never make direct API calls in components
+- Separate API service functions from React hooks
+- API service functions should be pure and return promises
+- Use consistent naming: `use[Entity]` for queries, `use[Action][Entity]` for mutations
+
+## Testing Considerations
+- Write functions that are easy to test
+- Avoid global state dependencies
+- Use dependency injection for external dependencies
+- Make async functions testable with proper error handling
