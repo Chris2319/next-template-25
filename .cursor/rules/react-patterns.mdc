@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # React Patterns and Anti-Patterns
 
 ### 1. Avoid Over-Optimization

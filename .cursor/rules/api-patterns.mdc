@@ -1,3 +1,7 @@
+---
+alwaysApply: true
+---
+
 # API Patterns and TanStack Query Rules
 
 ## Core API Principles

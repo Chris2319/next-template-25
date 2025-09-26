@@ -1,4 +1,381 @@
+---
+alwaysApply: true
+---
+
 # TypeScript Rules
+
+## Type Definitions
+- Use types instead of interfaces for all definitions
+- Create specific types for all function parameters and return values
+- Avoid `any` and `unknown` types unless absolutely necessary
+- Use union types for multiple possible values
+- Prefer type composition over inheritance
+
+```typescript
+// Good: Using types
+export type UserRole = 'admin' | 'user' | 'moderator';
+export type ApiResponse<T> = {
+  data: T;
+  status: 'success' | 'error';
+  message?: string;
+};
+
+// Bad: Using interfaces
+interface IUser {
+  id: string;
+  name: string;
+}
+```
+
+## Strict TypeScript Configuration
+- Enable strict mode in tsconfig.json
+- Use `noImplicitAny`, `strictNullChecks`, and `strictFunctionTypes`
+- Enable `noUncheckedIndexedAccess` for safer array/object access
+- Use `exactOptionalPropertyTypes` for precise optional handling
+
+## Generic Types
+- Use meaningful generic type names (avoid single letters when possible)
+- Constrain generics with `extends` when appropriate
+- Provide default generic types when reasonable
+- Use generic constraints to ensure type safety
+
+```typescript
+// Good: Descriptive generic names
+export type ApiEndpoint<RequestData, ResponseData> = {
+  url: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  transform: (data: RequestData) => ResponseData;
+};
+
+// Good: Generic constraints
+export type DatabaseEntity<TEntity extends { id: string }> = {
+  create: (entity: Omit<TEntity, 'id'>) => Promise<TEntity>;
+  update: (id: string, updates: Partial<TEntity>) => Promise<TEntity>;
+  delete: (id: string) => Promise<void>;
+};
+```
+
+## Utility Types
+- Leverage built-in utility types: `Partial`, `Pick`, `Omit`, `Record`
+- Create custom utility types for repeated patterns
+- Use template literal types for string manipulation
+- Implement conditional types for complex type transformations
+
+```typescript
+// Custom utility types
+export type DeepPartial<T> = {
+  [P in keyof T]?: T[P] extends object ? DeepPartial<T[P]> : T[P];
+};
+
+export type NonEmptyArray<T> = [T, ...T[]];
+
+export type ApiEndpoints = Record<string, {
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  path: string;
+}>;
+```
+
+## Type Guards and Assertions
+- Use type guards for runtime type checking
+- Implement custom type predicates for complex validation
+- Avoid type assertions (`as`) unless absolutely necessary
+- Use `satisfies` operator for type checking without type widening
+
+```typescript
+// Type guard
+export const isString = (value: unknown): value is string => {
+  return typeof value === 'string';
+};
+
+// Custom type predicate
+export const isValidUser = (obj: unknown): obj is User => {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    'id' in obj &&
+    'email' in obj &&
+    typeof (obj as User).id === 'string' &&
+    typeof (obj as User).email === 'string'
+  );
+};
+
+// Using satisfies
+const userRoles = {
+  admin: 'admin',
+  user: 'user',
+  moderator: 'moderator'
+} satisfies Record<string, UserRole>;
+```
+
+## Async Types
+- Properly type Promise return values
+- Use `Awaited<T>` utility type for promise resolution types
+- Type async function parameters and returns explicitly
+- Handle error types in async operations
+
+```typescript
+export type AsyncOperationResult<TData, TError = Error> = {
+  data?: TData;
+  error?: TError;
+  loading: boolean;
+};
+
+export const fetchUserData = async (userId: string): Promise<User | null> => {
+  try {
+    const response = await api.get(`/users/${userId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Failed to fetch user:', error);
+    return null;
+  }
+};
+```
+
+## Enum Alternatives
+- Use const assertions instead of enums when possible
+- Create union types for string constants
+- Use object with `as const` for better type inference
+- Prefer template literal unions for pattern matching
+
+```typescript
+// Instead of enum, use const assertion
+export const USER_ROLES = {
+  ADMIN: 'admin',
+  USER: 'user',
+  MODERATOR: 'moderator'
+} as const;
+
+export type UserRole = typeof USER_ROLES[keyof typeof USER_ROLES];
+
+// Template literal types
+export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
+export type ApiPath<T extends string> = `/api/${T}`;
+```
+
+## React TypeScript Patterns
+- Type component props with explicit interfaces
+- Use `React.FC<Props>` or direct prop typing
+- Type event handlers properly
+- Use proper types for refs and state
+- **Always type TanStack Query hooks and API functions properly**
+
+```typescript
+export type ButtonProps = {
+  children: React.ReactNode;
+  variant?: 'primary' | 'secondary';
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
+  disabled?: boolean;
+};
+
+export const Button: React.FC<ButtonProps> = ({ 
+  children, 
+  variant = 'primary', 
+  onClick, 
+  disabled = false 
+}) => {
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    onClick?.(event);
+  };
+
+  return (
+    <button onClick={handleClick} disabled={disabled}>
+      {children}
+    </button>
+  );
+};
+```
+
+## API and TanStack Query Types
+**Always properly type API functions and TanStack Query hooks**
+
+```typescript
+// API Response types
+export type ApiResponse<T> = {
+  data: T;
+  message: string;
+  status: 'success' | 'error';
+};
+
+export type PaginatedResponse<T> = {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+};
+
+// Entity types
+export type User = {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateUserData = Omit<User, 'id' | 'createdAt' | 'updatedAt'>;
+export type UpdateUserData = Partial<Omit<User, 'id' | 'createdAt' | 'updatedAt'>>;
+
+// API service types
+export type UserService = {
+  getUser: (id: string) => Promise<User>;
+  getUsers: (filters?: UserFilters) => Promise<PaginatedResponse<User>>;
+  createUser: (data: CreateUserData) => Promise<User>;
+  updateUser: (id: string, data: UpdateUserData) => Promise<User>;
+  deleteUser: (id: string) => Promise<void>;
+};
+
+// Query hook return types
+export type UseUserResult = {
+  data: User | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => void;
+};
+
+// Mutation hook types with optimistic updates
+export type UseUpdateUserResult = {
+  mutate: (variables: { id: string; data: UpdateUserData }) => void;
+  mutateAsync: (variables: { id: string; data: UpdateUserData }) => Promise<User>;
+  isPending: boolean;
+  isError: boolean;
+  error: Error | null;
+  reset: () => void;
+};
+
+// Optimistic update context types
+export type OptimisticContext<TData> = {
+  previousData: TData | undefined;
+  optimisticData?: TData;
+  id?: string;
+};
+
+// Generic optimistic mutation type
+export type OptimisticMutation<TData, TVariables> = UseMutationResult<
+  TData,
+  Error,
+  TVariables,
+  OptimisticContext<TData>
+>;
+
+// Optimistic update function type
+export type OptimisticUpdateFn<TData, TVariables> = (
+  oldData: TData,
+  variables: TVariables
+) => TData;
+
+// Type-safe optimistic hook
+export type UseOptimisticMutationResult<TData, TVariables> = {
+  mutate: (variables: TVariables) => void;
+  mutateAsync: (variables: TVariables) => Promise<TData>;
+  isPending: boolean;
+  isError: boolean;
+  error: Error | null;
+  reset: () => void;
+  // Additional optimistic-specific properties
+  isOptimistic: boolean;
+  originalData: TData | undefined;
+};
+```
+
+## Optimistic Update Type Patterns
+```typescript
+// Type for operations that require optimistic updates
+export type OptimisticOperation<TEntity> = {
+  create: (data: Omit<TEntity, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  update: (id: string, updates: Partial<TEntity>) => void;
+  delete: (id: string) => void;
+  toggle: (id: string, field: keyof TEntity) => void;
+};
+
+// Type for optimistic state in components
+export type OptimisticState<TData> = {
+  data: TData;
+  isOptimistic: boolean;
+  isPending: boolean;
+  error: Error | null;
+};
+```
+
+## Error Handling Types
+- Create specific error types for different error scenarios
+- Use discriminated unions for error handling
+- Type error boundaries properly
+- Handle API errors with typed responses
+
+```typescript
+export type AppError = {
+  type: 'validation';
+  field: string;
+  message: string;
+} | {
+  type: 'network';
+  status: number;
+  message: string;
+} | {
+  type: 'unknown';
+  message: string;
+};
+
+export type Result<TData, TError = AppError> = {
+  success: true;
+  data: TData;
+} | {
+  success: false;
+  error: TError;
+};
+```
+
+## Module and Import Types
+- Use type-only imports when importing types
+- Export types from centralized locations
+- Create barrel exports for related types
+- Use module augmentation when extending third-party types
+
+```typescript
+// Type-only imports
+import type { User } from '../types/user';
+import type { ApiResponse } from '../types/api';
+
+// Module augmentation
+declare module 'third-party-lib' {
+  interface ExistingType {
+    newProperty: string;
+  }
+}
+```
+
+## Performance Considerations
+- Use type-only imports to reduce bundle size
+- Avoid complex type computations at runtime
+- Use type assertions sparingly (performance cost)
+- Leverage TypeScript's structural typing for flexibility
+
+## Documentation and Comments
+- Use TSDoc comments for complex types
+- Document generic constraints and their purposes
+- Explain non-obvious type transformations
+- Provide usage examples for complex utility types
+
+```typescript
+/**
+ * Creates a type that makes all properties of T required except those specified in K
+ * @template T - The base type
+ * @template K - Keys to keep optional
+ * @example
+ * type PartialUser = RequiredExcept<User, 'id' | 'createdAt'>;
+ */
+export type RequiredExcept<T, K extends keyof T> = Omit<T, K> & Required<Pick<T, K>>;
+```
+
+## Type Testing
+- Test complex type transformations with type assertions
+- Use TypeScript's `@ts-expect-error` for negative testing
+- Create type test files for critical type logic
+- Validate type behavior with unit tests when possible# TypeScript Rules
 
 ## Type Definitions
 - Use types instead of interfaces for all definitions
